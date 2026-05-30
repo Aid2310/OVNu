@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>OVNu</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+:root{
+  --bg:#0d1117;--card:#161b22;--card2:#1c2128;--border:#30363d;
+  --text:#e6edf3;--muted:#7d8590;
+  --green:#3fb950;--red:#f85149;--yellow:#d29922;
+  --train:#a5a5ff;--tram:#ffd166;--bus:#06d6d6;--metro:#06f5a7;--ferry:#ff9a3c;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;font-family:'Syne',sans-serif;background:var(--bg);color:var(--text)}
+.app{display:flex;flex-direction:column;height:100%}
+
+/* HEADER */
+.header{background:var(--bg);border-bottom:1px solid var(--border);padding:10px 12px 0;flex-shrink:0;z-index:30}
+.header-row{display:flex;align-items:flex-end;gap:6px;margin-bottom:8px}
+.logo{font-size:20px;font-weight:800;letter-spacing:-.5px;white-space:nowrap;flex-shrink:0;padding-bottom:2px}
+.logo em{color:var(--metro);font-style:normal}
+.search-area{display:flex;gap:5px;flex:1;align-items:flex-end}
+.field{display:flex;flex-direction:column;gap:3px}
+.field.line-f{width:100px;flex-shrink:0}
+.field.stop-f{flex:1;min-width:0}
+.field-label{font-size:9px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted)}
+.field-label .opt{color:var(--border);font-weight:400;letter-spacing:0}
+.inp{background:var(--card2);border:1.5px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text);font-family:'Syne',sans-serif;font-size:13px;outline:none;width:100%;transition:border-color .15s}
+.inp:focus{border-color:var(--metro)}
+.inp::placeholder{color:var(--muted)}
+.inp.mono{font-family:'IBM Plex Mono',monospace;font-size:12px}
+.btn-go{background:var(--metro);color:#0d1117;border:none;border-radius:8px;padding:0 14px;height:36px;font-family:'Syne',sans-serif;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0}
+.btn-go:active{opacity:.8}
+.hint{font-size:10px;color:var(--muted);padding-bottom:8px;line-height:1.5}
+
+/* TABS */
+.tabs{display:flex}
+.tab{flex:1;padding:10px 4px;text-align:center;font-size:11px;font-weight:700;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;letter-spacing:.3px;text-transform:uppercase}
+.tab.active{color:var(--metro);border-bottom-color:var(--metro)}
+
+/* PANELS */
+.content{flex:1;overflow:hidden;position:relative}
+.panel{position:absolute;inset:0;overflow-y:auto;overflow-x:hidden;padding:12px;display:none}
+.panel.active{display:block}
+#panel-map{padding:0;overflow:hidden}
+.panel::-webkit-scrollbar{width:3px}
+.panel::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+
+/* LABELS & CHIPS */
+.section-lbl{font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.chip{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;transition:all .12s}
+.chip:hover{border-color:var(--metro);color:var(--metro)}
+.chip.empty{color:var(--muted);cursor:default;border-style:dashed}
+
+/* STOP HEADER */
+.stop-hdr{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;gap:8px}
+.stop-name{font-size:18px;font-weight:800;line-height:1.1}
+.stop-clk{font-size:11px;color:var(--muted);margin-top:3px;font-family:'IBM Plex Mono',monospace}
+.save-btn{background:none;border:1.5px solid var(--border);border-radius:8px;color:var(--muted);font-size:11px;font-weight:700;font-family:'Syne',sans-serif;padding:5px 10px;cursor:pointer;white-space:nowrap;flex-shrink:0;transition:all .12s}
+.save-btn:hover,.save-btn.on{border-color:var(--metro);color:var(--metro)}
+.save-btn.on{background:rgba(6,245,167,.08)}
+
+/* DEPARTURE CARDS */
+.dep{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:11px 13px;margin-bottom:7px;display:flex;align-items:center;gap:11px;animation:up .18s ease both}
+@keyframes up{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+.dep-badge{width:44px;height:44px;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;font-weight:800;font-size:11px;gap:1px}
+.dep-info{flex:1;min-width:0}
+.dep-line{font-size:14px;font-weight:700}
+.dep-dest{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.dep-time{text-align:right;flex-shrink:0}
+.dep-min{font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:500;line-height:1}
+.dep-clk{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);margin-top:2px}
+.dep-st{font-family:'IBM Plex Mono',monospace;font-size:10px;margin-top:2px}
+.ok{color:var(--green)}.late{color:var(--red)}.soon{color:var(--yellow)}
+.T-TRAIN{background:rgba(165,165,255,.12);color:var(--train)}
+.T-TRAM{background:rgba(255,209,102,.12);color:var(--tram)}
+.T-BUS{background:rgba(6,214,214,.12);color:var(--bus)}
+.T-METRO{background:rgba(6,245,167,.12);color:var(--metro)}
+.T-FERRY{background:rgba(255,154,60,.12);color:var(--ferry)}
+
+/* MAP */
+#map{width:100%;height:100%}
+.map-legend{position:absolute;bottom:14px;right:14px;background:rgba(13,17,23,.92);border:1px solid var(--border);border-radius:10px;padding:10px 12px;z-index:1000;max-width:180px}
+.map-legend-ttl{font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.map-legend-row{display:flex;align-items:center;gap:7px;font-size:11px;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.map-legend-bar{width:18px;height:3px;border-radius:2px;flex-shrink:0}
+
+/* DISRUPTIONS */
+.dis{background:var(--card);border:1px solid var(--border);border-left:3px solid var(--red);border-radius:12px;padding:12px;margin-bottom:8px}
+.dis.w{border-left-color:var(--yellow)}.dis.i{border-left-color:var(--bus)}
+.dis-tags{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:5px}
+.dis-tag{border-radius:5px;padding:2px 7px;font-size:10px;font-weight:700}
+.dis-title{font-size:13px;font-weight:700;margin-bottom:3px}
+.dis-body{font-size:11px;color:var(--muted);line-height:1.5}
+
+/* SPEED */
+.speed-wrap{display:flex;flex-direction:column;align-items:center;padding:16px 12px;gap:14px}
+.g-wrap{position:relative;width:200px;height:200px}
+.g-wrap svg{width:100%;height:100%}
+.g-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.g-num{font-family:'IBM Plex Mono',monospace;font-size:52px;font-weight:500;line-height:1;color:var(--metro);transition:color .3s}
+.g-unit{font-size:11px;color:var(--muted);font-weight:600;letter-spacing:1px;text-transform:uppercase}
+.s-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%;max-width:280px}
+.s-stat{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center}
+.s-val{font-family:'IBM Plex Mono',monospace;font-size:18px;font-weight:500}
+.s-lbl{font-size:10px;color:var(--muted);margin-top:2px;font-weight:600}
+.gps-btn{padding:11px 26px;border-radius:10px;border:none;font-family:'Syne',sans-serif;font-size:13px;font-weight:700;cursor:pointer;background:var(--metro);color:#0d1117}
+.gps-btn.stop{background:var(--red);color:#fff}
+
+/* MISC */
+.row-loading{display:flex;align-items:center;gap:10px;padding:14px 0;color:var(--muted);font-size:13px}
+.spin{width:15px;height:15px;border:2px solid var(--border);border-top-color:var(--metro);border-radius:50%;animation:spin .6s linear infinite;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:130px;gap:8px;text-align:center}
+.empty-ico{font-size:30px}.empty-txt{font-size:12px;color:var(--muted);line-height:1.5}
+.alert{border-radius:10px;padding:9px 12px;margin-bottom:9px;font-size:11px;line-height:1.5}
+.alert-y{background:rgba(210,153,34,.1);border:1px solid rgba(210,153,34,.3);border-left:3px solid var(--yellow)}
+.alert-r{background:rgba(248,81,73,.07);border:1px solid var(--red);border-radius:12px;padding:18px;text-align:center}
+.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%) translateY(70px);background:var(--card);border:1px solid var(--border);border-radius:20px;padding:8px 16px;font-size:12px;font-weight:600;z-index:9999;transition:transform .3s;white-space:nowrap;pointer-events:none;box-shadow:0 6px 20px rgba(0,0,0,.5)}
+.toast.show{transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="header">
+    <div class="header-row">
+      <div class="logo">OV<em>Nu</em></div>
+      <div class="search-area">
+        <div class="field line-f">
+          <div class="field-label">Lijn <span class="opt">(optioneel)</span></div>
+          <input class="inp mono" id="lineIn" type="text" placeholder="HTM_2"
+            autocomplete="off" spellcheck="false"
+            onkeydown="if(event.key==='Enter')go()">
+        </div>
+        <div class="field stop-f">
+          <div class="field-label">Halte</div>
+          <input class="inp" id="stopIn" type="text" placeholder="Bijv. Centraal Station"
+            autocomplete="off" spellcheck="false"
+            onkeydown="if(event.key==='Enter')go()">
+        </div>
+        <button class="btn-go" onclick="go()">Zoeken</button>
+      </div>
+    </div>
+    <div class="hint">
+      Zonder lijn: zoekt in alle haltes · Met lijn (HTM_2, GVB_17, RET_E): sneller
+    </div>
+    <div class="tabs" id="tabs">
+      <div class="tab active" data-tab="departures">Vertrektijden</div>
+      <div class="tab" data-tab="map">Kaart</div>
+      <div class="tab" data-tab="disruptions">Storingen</div>
+      <div class="tab" data-tab="speed">Snelheid</div>
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="panel active" id="panel-departures">
+      <div class="section-lbl">Opgeslagen haltes</div>
+      <div class="chips" id="savedRow"></div>
+      <div id="depContent">
+        <div class="empty"><div class="empty-ico">🚏</div>
+          <div class="empty-txt">Vul een haltenaam in en klik Zoeken<br>
+            <small>Lijn optioneel — zonder lijn duurt zoeken langer</small></div></div>
+      </div>
+    </div>
+
+    <div class="panel" id="panel-map">
+      <div id="map"></div>
+      <div class="map-legend" id="mapLegend" style="display:none">
+        <div class="map-legend-ttl">Lijnen</div>
+        <div id="mapLegendItems"></div>
+      </div>
+    </div>
+
+    <div class="panel" id="panel-disruptions">
+      <div id="disContent"><div class="row-loading"><div class="spin"></div>Storingen laden…</div></div>
+    </div>
+
+    <div class="panel" id="panel-speed">
+      <div class="speed-wrap">
+        <div class="g-wrap">
+          <svg viewBox="0 0 100 100">
+            <circle cx="50" cy="50" r="42" fill="none" stroke="#1c2128" stroke-width="7"
+              stroke-dasharray="264" stroke-dashoffset="66" stroke-linecap="round" transform="rotate(135 50 50)"/>
+            <circle cx="50" cy="50" r="42" fill="none" stroke="#06f5a7" stroke-width="7"
+              stroke-dasharray="264" stroke-dashoffset="264" stroke-linecap="round"
+              transform="rotate(135 50 50)" id="gaugeArc" style="transition:stroke-dashoffset .4s,stroke .3s"/>
+          </svg>
+          <div class="g-center">
+            <div class="g-num" id="gaugeNum">--</div>
+            <div class="g-unit">km/u</div>
+          </div>
+        </div>
+        <div class="s-stats">
+          <div class="s-stat"><div class="s-val" id="sMax">--</div><div class="s-lbl">Max km/u</div></div>
+          <div class="s-stat"><div class="s-val" id="sAvg">--</div><div class="s-lbl">Gem. km/u</div></div>
+          <div class="s-stat"><div class="s-val" id="sAlt">--</div><div class="s-lbl">Hoogte (m)</div></div>
+          <div class="s-stat"><div class="s-val" id="sAcc">--</div><div class="s-lbl">GPS ±</div></div>
+        </div>
+        <button class="gps-btn" id="gpsBtn" onclick="toggleGPS()">📍 GPS starten</button>
+        <div style="font-size:10px;color:var(--muted);text-align:center;max-width:220px;line-height:1.5">
+          Werkt het beste in een rijdend voertuig
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+// ── CONSTANTS ─────────────────────────────
+const TYPE_ICON  = {TRAIN:'🚆',TRAM:'🚊',BUS:'🚌',METRO:'🚇',FERRY:'⛴️'};
+// Kleuren per DataOwnerCode_LinePublicNumber (worden dynamisch aangemaakt)
+const LINE_PALETTE = ['#06f5a7','#ffd166','#06d6d6','#a5a5ff','#ff9a3c','#f85149','#3fb950','#818cf8'];
+
+// ── STATE ─────────────────────────────────
+let saved       = JSON.parse(localStorage.getItem('ovnu_saved') || '[]');
+let currentTpc  = '';
+let mapRoutes   = [];   // [{label, color, coords:[{lat,lng,name}]}]
+let lMap        = null;
+let lLayers     = [];
+let sacCache    = null; // stopareacode list cache
+let gpsWatch    = null, maxSpd = 0, spds = [];
+
+// ── API ───────────────────────────────────
+// Lokaal (ovproxy.py): PROXY = ''
+// GitHub Pages: PROXY = 'https://jouw-worker.workers.dev'
+const PROXY = '';
+
+async function api(path) {
+  const r = await fetch(PROXY + '/api' + path);
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+
+// ── TABS ──────────────────────────────────
+document.getElementById('tabs').addEventListener('click', e => {
+  const tab = e.target.dataset.tab; if (!tab) return;
+  switchTab(tab);
+  if (tab === 'map')         openMap();
+  if (tab === 'disruptions') loadDisruptions();
+});
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+  document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + tab));
+}
+
+// ── MAIN SEARCH ───────────────────────────
+async function go() {
+  const line  = document.getElementById('lineIn').value.trim().toUpperCase();
+  const query = document.getElementById('stopIn').value.trim();
+  if (!query) { toast('Vul een haltenaam in'); return; }
+
+  setDep(`<div class="row-loading"><div class="spin"></div>Zoeken…</div>`);
+  switchTab('departures');
+  mapRoutes = [];
+
+  let tpcs = [];
+  let stopName = query;
+
+  if (line) {
+    // ── SNELLE PAD: lijn opgegeven ──
+    const result = await findTPCsByLine(line, query.toLowerCase());
+    tpcs     = result.tpcs;
+    stopName = result.name || query;
+  } else {
+    // ── LANGZAME PAD: zoek in alle stopareas ──
+    setDep(`<div class="row-loading"><div class="spin"></div>Alle haltes doorzoeken…</div>`);
+    const result = await findTPCsByName(query.toLowerCase());
+    tpcs     = result.tpcs;
+    stopName = result.name || query;
+  }
+
+  if (!tpcs.length) {
+    setDep(`<div class="alert-r">
+      <div style="font-size:24px">🔍</div>
+      <div style="color:var(--red);font-weight:700;margin-top:8px">Halte niet gevonden</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:5px">"${query}"${line?' op lijn '+line:''}</div>
+    </div>`);
+    return;
+  }
+
+  currentTpc = tpcs.join(',');
+  toast('Gevonden: ' + stopName);
+  await loadDeps(currentTpc, stopName);
+}
+
+// ── FIND TPCs VIA LINE ────────────────────
+async function findTPCsByLine(line, query) {
+  const tpcs = []; let name = '';
+  for (const dir of [1, 2]) {
+    try {
+      const ld = await api(`/line/${line}_${dir}`);
+      const lo = Object.values(ld)[0] || {};
+      const jid = Object.keys(lo.Actuals || {})[0];
+      if (!jid) continue;
+
+      const jd   = await api(`/journey/${jid}`);
+      const jobj = Object.values(jd)[0] || {};
+      const jstops = Object.values(jobj.Stops || {});
+
+      // Kaartcoördinaten
+      const coords = jstops
+        .filter(s => s.Latitude && s.Longitude)
+        .sort((a, b) => (a.FortifyOrderNumber||0) - (b.FortifyOrderNumber||0))
+        .map(s => ({lat: s.Latitude, lng: s.Longitude, name: s.TimingPointName||''}));
+      if (coords.length > 1) {
+        const dest = lo.Line?.DestinationName50 || `${line} richting ${dir}`;
+        mapRoutes.push({label: `${line.split('_').slice(-1)[0]} → ${dest}`, color: LINE_PALETTE[mapRoutes.length % LINE_PALETTE.length], coords});
+      }
+
+      // TPCs zoeken op naam
+      const allTpcs = [...new Set(jstops.map(s => s.TimingPointCode).filter(Boolean))];
+      if (!allTpcs.length) continue;
+      const td = await api(`/tpc/${allTpcs.join(',')}`);
+      Object.entries(td).forEach(([tpc, info]) => {
+        const n = (info.Stop || info).TimingPointName || '';
+        if (n.toLowerCase().includes(query) && !tpcs.includes(tpc)) {
+          tpcs.push(tpc);
+          if (!name) name = n;
+        }
+      });
+    } catch (e) { console.warn(`${line}_${dir}:`, e.message); }
+  }
+  return {tpcs, name};
+}
+
+// ── FIND TPCs VIA STOPAREACODE LIST ───────
+async function findTPCsByName(query) {
+  // Laad stopareacode lijst eenmalig
+  if (!sacCache) {
+    setDep(`<div class="row-loading"><div class="spin"></div>Haltelijst ophalen (eenmalig)…</div>`);
+    try {
+      sacCache = await api('/stopareacode/');
+    } catch (e) {
+      return {tpcs: [], name: ''};
+    }
+  }
+
+  // Zoek matching stopareas
+  const matches = Object.entries(sacCache)
+    .filter(([, v]) => (v.TimingPointName||'').toLowerCase().includes(query))
+    .slice(0, 20);
+
+  if (!matches.length) return {tpcs: [], name: ''};
+
+  // Verzamel alle TPCs (sommige stopareas hebben er al één, andere niet)
+  const tpcs = [];
+  let name = '';
+  matches.forEach(([sac, v]) => {
+    const tpc = v.TimingPointCode || sac;
+    if (tpc && !tpcs.includes(tpc)) {
+      tpcs.push(tpc);
+      if (!name) name = v.TimingPointName || '';
+    }
+  });
+
+  return {tpcs, name};
+}
+
+// ── LOAD DEPARTURES ───────────────────────
+async function loadDeps(tpc, stopName) {
+  switchTab('departures');
+  setDep(`<div class="row-loading"><div class="spin"></div>Vertrektijden ophalen…</div>`);
+  try {
+    const data = await api(`/tpc/${tpc}`);
+
+    // GeneralMessages
+    const msgs = [];
+    Object.values(data).forEach(tp => {
+      Object.values(tp.GeneralMessages || {}).forEach(m => {
+        const txt = m.Content?.[0]?.Message?.Translation?.[0]?.String || m.Description || m.Message || null;
+        if (txt && !msgs.includes(txt)) msgs.push(txt);
+      });
+    });
+
+    // Passes
+    const trips = [];
+    Object.values(data).forEach(tp => {
+      Object.values(tp.Passes || {}).forEach(p => trips.push({
+        line:  p.LinePublicNumber  || '?',
+        owner: p.DataOwnerCode     || '',
+        dest:  p.DestinationName50 || 'Onbekend',
+        exp:   new Date(p.ExpectedArrivalTime),
+        tgt:   new Date(p.TargetArrivalTime),
+        type:  (p.TransportType    || 'BUS').toUpperCase(),
+      }));
+    });
+
+    trips.sort((a, b) => a.tgt - b.tgt);
+
+    // Na het ophalen: haal kaartroutes op voor unieke lijnen (als nog geen routes)
+    if (mapRoutes.length === 0) {
+      const uniqueLines = [...new Set(trips.map(t => `${t.owner}_${t.line}`))];
+      fetchMapRoutes(uniqueLines); // async, niet awaiten
+    } else if (lMap) {
+      drawMap();
+    }
+
+    const safeT = tpc.replace(/'/g,"\\'");
+    const safeN = stopName.replace(/'/g,"\\'");
+    const isSaved = saved.some(s => s.tpc === tpc);
+
+    setDep(
+      `<div class="stop-hdr">
+        <div>
+          <div class="section-lbl">Nu vertrekkend</div>
+          <div class="stop-name">${stopName}</div>
+          <div class="stop-clk" id="liveClk"></div>
+        </div>
+        <button class="save-btn${isSaved?' on':''}" id="saveBtn"
+          onclick="toggleSave('${safeT}','${safeN}')">
+          ${isSaved?'★ Opgeslagen':'☆ Opslaan'}
+        </button>
+      </div>` +
+      msgs.map(m => `<div class="alert alert-y"><b style="color:var(--yellow)">⚠️ </b>${m}</div>`).join('') +
+      (trips.length
+        ? trips.slice(0, 25).map(renderTrip).join('')
+        : `<div class="empty"><div class="empty-ico">🤷</div><div class="empty-txt">Geen vertrektijden</div></div>`)
+    );
+  } catch (err) {
+    setDep(`<div class="alert-r">
+      <div style="font-size:22px">⚠️</div>
+      <div style="color:var(--red);font-weight:700;margin-top:6px">Kan data niet laden</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px">${err.message}</div>
+    </div>`);
+  }
+}
+
+// ── AUTO-FETCH KAARTROUTES ────────────────
+// Wordt aangeroepen na loadDeps als er nog geen routes zijn.
+// Haalt voor elke unieke lijn de route op en update de kaart.
+async function fetchMapRoutes(lineCodes) {
+  for (const [i, code] of lineCodes.entries()) {
+    for (const dir of [1, 2]) {
+      try {
+        const ld = await api(`/line/${code}_${dir}`);
+        const lo = Object.values(ld)[0] || {};
+        const jid = Object.keys(lo.Actuals || {})[0];
+        if (!jid) continue;
+        const jd = await api(`/journey/${jid}`);
+        const jobj = Object.values(jd)[0] || {};
+        const coords = Object.values(jobj.Stops || {})
+          .filter(s => s.Latitude && s.Longitude)
+          .sort((a, b) => (a.FortifyOrderNumber||0) - (b.FortifyOrderNumber||0))
+          .map(s => ({lat: s.Latitude, lng: s.Longitude, name: s.TimingPointName||''}));
+        if (coords.length > 1) {
+          const dest  = lo.Line?.DestinationName50 || '';
+          const lnum  = code.split('_').slice(1).join('');
+          const color = LINE_PALETTE[(mapRoutes.length) % LINE_PALETTE.length];
+          mapRoutes.push({label: `${lnum} → ${dest}`, color, coords});
+        }
+      } catch (e) { /* lijn niet beschikbaar */ }
+    }
+  }
+  if (lMap && mapRoutes.length) drawMap();
+}
+
+// ── RENDER TRIP ───────────────────────────
+function renderTrip(t) {
+  const delay = Math.round((t.exp - t.tgt) / 60000);
+  const min   = Math.max(0, Math.round((t.exp - Date.now()) / 60000));
+  const clock = t.tgt.toLocaleTimeString('nl-NL', {hour:'2-digit', minute:'2-digit'});
+  const onTime = Math.abs(delay) < 1;
+  const cls   = onTime ? 'ok' : Math.abs(delay) <= 2 ? 'soon' : 'late';
+  return `<div class="dep">
+    <div class="dep-badge T-${t.type}">${TYPE_ICON[t.type]||'🚌'}<br>${t.line}</div>
+    <div class="dep-info">
+      <div class="dep-line">${t.line}</div>
+      <div class="dep-dest">→ ${t.dest}</div>
+    </div>
+    <div class="dep-time">
+      <div class="dep-min">${min===0?'Nu':min+"'"}</div>
+      <div class="dep-clk">${clock}</div>
+      <div class="dep-st ${cls}">${onTime?'✓ op tijd':(delay>0?'+':'')+delay+' min'}</div>
+    </div>
+  </div>`;
+}
+
+setInterval(() => {
+  const el = document.getElementById('liveClk');
+  if (el) el.textContent = new Date().toLocaleTimeString('nl-NL', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}, 1000);
+
+// ── SAVED ─────────────────────────────────
+function renderSaved() {
+  const el = document.getElementById('savedRow');
+  el.innerHTML = saved.length
+    ? saved.map(s => {
+        const t = s.tpc.replace(/'/g,"\\'"), n = s.name.replace(/'/g,"\\'");
+        return `<div class="chip" onclick="loadDeps('${t}','${n}')">🚏 ${s.name}</div>`;
+      }).join('')
+    : `<div class="chip empty">Nog geen opgeslagen haltes</div>`;
+}
+
+function toggleSave(tpc, name) {
+  const idx = saved.findIndex(s => s.tpc === tpc);
+  if (idx >= 0) { saved.splice(idx, 1); toast('Verwijderd'); }
+  else           { saved.push({tpc, name}); toast('Opgeslagen ⭐'); }
+  localStorage.setItem('ovnu_saved', JSON.stringify(saved));
+  renderSaved();
+  const btn = document.getElementById('saveBtn');
+  if (btn) {
+    const on = saved.some(x => x.tpc === tpc);
+    btn.className = 'save-btn' + (on ? ' on' : '');
+    btn.textContent = on ? '★ Opgeslagen' : '☆ Opslaan';
+  }
+}
+
+// ── MAP ───────────────────────────────────
+function openMap() {
+  if (!lMap) {
+    setTimeout(() => {
+      lMap = L.map('map').setView([52.1, 4.3], 10);
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap', maxZoom: 19
+      }).addTo(lMap);
+      if (mapRoutes.length) drawMap();
+    }, 50);
+  } else {
+    lMap.invalidateSize();
+    if (mapRoutes.length) setTimeout(drawMap, 60);
+  }
+}
+
+function drawMap() {
+  if (!lMap) return;
+  lLayers.forEach(l => lMap.removeLayer(l));
+  lLayers = [];
+
+  const legendItems = document.getElementById('mapLegendItems');
+  legendItems.innerHTML = '';
+  const allCoords = [];
+
+  mapRoutes.forEach(route => {
+    const latlngs = route.coords.map(c => [c.lat, c.lng]);
+    const poly = L.polyline(latlngs, {color: route.color, weight: 5, opacity: .9}).addTo(lMap);
+    lLayers.push(poly);
+    route.coords.forEach(c => {
+      const m = L.circleMarker([c.lat, c.lng], {
+        radius: 5, fillColor: route.color, color: '#fff', weight: 2, fillOpacity: 1
+      }).addTo(lMap);
+      if (c.name) m.bindTooltip(c.name, {direction:'top'});
+      lLayers.push(m);
+      allCoords.push([c.lat, c.lng]);
+    });
+    legendItems.innerHTML += `<div class="map-legend-row">
+      <div class="map-legend-bar" style="background:${route.color}"></div>
+      <span style="font-size:10px;overflow:hidden;text-overflow:ellipsis">${route.label}</span>
+    </div>`;
+  });
+
+  document.getElementById('mapLegend').style.display = mapRoutes.length ? 'block' : 'none';
+  if (allCoords.length > 1) lMap.fitBounds(L.latLngBounds(allCoords), {padding:[24,24]});
+}
+
+// ── DISRUPTIONS ───────────────────────────
+async function loadDisruptions() {
+  const el = document.getElementById('disContent');
+  if (el.dataset.loaded) return;
+  try {
+    const r = await fetch('https://www.rijdendetreinen.nl/api/v1/disruptions');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    const items = Array.isArray(data) ? data : (data.disruptions || []);
+    el.innerHTML = items.length
+      ? items.slice(0,15).map(d => {
+          const sev = d.severity||'';
+          const cls = sev==='maintenance'?'i':sev==='minor'?'w':'';
+          const c   = cls==='i'?'var(--bus)':cls==='w'?'var(--yellow)':'var(--red)';
+          const ln  = d.line||d.id||'';
+          return `<div class="dis ${cls}">
+            ${ln?`<div class="dis-tags"><span class="dis-tag" style="background:${c}20;color:${c}">${ln}</span></div>`:''}
+            <div class="dis-title">${d.title||'Verstoring'}</div>
+            ${d.description?`<div class="dis-body">${String(d.description).slice(0,200)}</div>`:''}
+          </div>`;
+        }).join('')
+      : `<div class="empty"><div class="empty-ico">✅</div><div class="empty-txt">Geen storingen</div></div>`;
+  } catch {
+    el.innerHTML = `<div class="empty"><div class="empty-ico">⚠️</div><div class="empty-txt">Storingen niet bereikbaar</div></div>`;
+  }
+  el.dataset.loaded = '1';
+}
+
+// ── GPS ───────────────────────────────────
+function toggleGPS() {
+  const btn = document.getElementById('gpsBtn');
+  if (gpsWatch !== null) {
+    navigator.geolocation.clearWatch(gpsWatch); gpsWatch = null;
+    btn.textContent = '📍 GPS starten'; btn.classList.remove('stop'); return;
+  }
+  if (!navigator.geolocation) { toast('GPS niet beschikbaar'); return; }
+  maxSpd = 0; spds = [];
+  btn.textContent = '⏹ GPS stoppen'; btn.classList.add('stop');
+  document.getElementById('gaugeNum').textContent = '0';
+  gpsWatch = navigator.geolocation.watchPosition(pos => {
+    const kmh = Math.round((pos.coords.speed||0)*3.6);
+    const acc = Math.round(pos.coords.accuracy);
+    const alt = pos.coords.altitude ? Math.round(pos.coords.altitude) : '--';
+    if (kmh > maxSpd) maxSpd = kmh;
+    spds.push(kmh);
+    const avg = Math.round(spds.reduce((a,b)=>a+b,0)/spds.length);
+    document.getElementById('gaugeNum').textContent = kmh;
+    document.getElementById('sMax').textContent = maxSpd;
+    document.getElementById('sAvg').textContent = avg;
+    document.getElementById('sAlt').textContent = alt;
+    document.getElementById('sAcc').textContent = `±${acc}m`;
+    const arc = document.getElementById('gaugeArc');
+    const color = kmh<40?'#06f5a7':kmh<100?'#ffd166':'#f85149';
+    arc.setAttribute('stroke-dashoffset', 264-(264*Math.min(kmh/160,1)));
+    arc.style.stroke = color;
+    document.getElementById('gaugeNum').style.color = color;
+  }, e => toast('GPS: '+e.message), {enableHighAccuracy:true,maximumAge:500,timeout:12000});
+}
+
+// ── UTILS ─────────────────────────────────
+function setDep(html) { document.getElementById('depContent').innerHTML = html; }
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// ── INIT ──────────────────────────────────
+renderSaved();
+</script>
+</body>
+</html>
