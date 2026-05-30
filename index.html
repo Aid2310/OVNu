@@ -220,21 +220,18 @@ html,body{height:100%;overflow:hidden;font-family:'Syne',sans-serif;background:v
 <script>
 // ── CONSTANTS ─────────────────────────────
 const TYPE_ICON  = {TRAIN:'🚆',TRAM:'🚊',BUS:'🚌',METRO:'🚇',FERRY:'⛴️'};
-// Kleuren per DataOwnerCode_LinePublicNumber (worden dynamisch aangemaakt)
 const LINE_PALETTE = ['#06f5a7','#ffd166','#06d6d6','#a5a5ff','#ff9a3c','#f85149','#3fb950','#818cf8'];
 
 // ── STATE ─────────────────────────────────
 let saved       = JSON.parse(localStorage.getItem('ovnu_saved') || '[]');
 let currentTpc  = '';
-let mapRoutes   = [];   // [{label, color, coords:[{lat,lng,name}]}]
+let mapRoutes    = [];   
 let lMap        = null;
 let lLayers     = [];
-let sacCache    = null; // stopareacode list cache
+let sacCache    = null; 
 let gpsWatch    = null, maxSpd = 0, spds = [];
 
 // ── API ───────────────────────────────────
-// Lokaal (ovproxy.py): PROXY = ''
-// GitHub Pages: PROXY = 'https://jouw-worker.workers.dev'
 const PROXY = 'https://bitter-heart-a9da.aidenelias193.workers.dev';
 
 async function api(path) {
@@ -271,12 +268,10 @@ async function go() {
   let stopName = query;
 
   if (line) {
-    // ── SNELLE PAD: lijn opgegeven ──
     const result = await findTPCsByLine(line, query.toLowerCase());
     tpcs     = result.tpcs;
     stopName = result.name || query;
   } else {
-    // ── LANGZAME PAD: zoek in alle stopareas ──
     setDep(`<div class="row-loading"><div class="spin"></div>Alle haltes doorzoeken…</div>`);
     const result = await findTPCsByName(query.toLowerCase());
     tpcs     = result.tpcs;
@@ -311,7 +306,6 @@ async function findTPCsByLine(line, query) {
       const jobj = Object.values(jd)[0] || {};
       const jstops = Object.values(jobj.Stops || {});
 
-      // Kaartcoördinaten
       const coords = jstops
         .filter(s => s.Latitude && s.Longitude)
         .sort((a, b) => (a.FortifyOrderNumber||0) - (b.FortifyOrderNumber||0))
@@ -321,7 +315,6 @@ async function findTPCsByLine(line, query) {
         mapRoutes.push({label: `${line.split('_').slice(-1)[0]} → ${dest}`, color: LINE_PALETTE[mapRoutes.length % LINE_PALETTE.length], coords});
       }
 
-      // TPCs zoeken op naam
       const allTpcs = [...new Set(jstops.map(s => s.TimingPointCode).filter(Boolean))];
       if (!allTpcs.length) continue;
       const td = await api(`/tpc/${allTpcs.join(',')}`);
@@ -339,7 +332,6 @@ async function findTPCsByLine(line, query) {
 
 // ── FIND TPCs VIA STOPAREACODE LIST ───────
 async function findTPCsByName(query) {
-  // Laad stopareacode lijst eenmalig
   if (!sacCache) {
     setDep(`<div class="row-loading"><div class="spin"></div>Haltelijst ophalen (eenmalig)…</div>`);
     try {
@@ -349,14 +341,12 @@ async function findTPCsByName(query) {
     }
   }
 
-  // Zoek matching stopareas
   const matches = Object.entries(sacCache)
     .filter(([, v]) => (v.TimingPointName||'').toLowerCase().includes(query))
     .slice(0, 20);
 
   if (!matches.length) return {tpcs: [], name: ''};
 
-  // Verzamel alle TPCs (sommige stopareas hebben er al één, andere niet)
   const tpcs = [];
   let name = '';
   matches.forEach(([sac, v]) => {
@@ -377,7 +367,6 @@ async function loadDeps(tpc, stopName) {
   try {
     const data = await api(`/tpc/${tpc}`);
 
-    // GeneralMessages
     const msgs = [];
     Object.values(data).forEach(tp => {
       Object.values(tp.GeneralMessages || {}).forEach(m => {
@@ -386,7 +375,6 @@ async function loadDeps(tpc, stopName) {
       });
     });
 
-    // Passes
     const trips = [];
     Object.values(data).forEach(tp => {
       Object.values(tp.Passes || {}).forEach(p => trips.push({
@@ -401,10 +389,9 @@ async function loadDeps(tpc, stopName) {
 
     trips.sort((a, b) => a.tgt - b.tgt);
 
-    // Na het ophalen: haal kaartroutes op voor unieke lijnen (als nog geen routes)
     if (mapRoutes.length === 0) {
       const uniqueLines = [...new Set(trips.map(t => `${t.owner}_${t.line}`))];
-      fetchMapRoutes(uniqueLines); // async, niet awaiten
+      fetchMapRoutes(uniqueLines); 
     } else if (lMap) {
       drawMap();
     }
@@ -440,8 +427,6 @@ async function loadDeps(tpc, stopName) {
 }
 
 // ── AUTO-FETCH KAARTROUTES ────────────────
-// Wordt aangeroepen na loadDeps als er nog geen routes zijn.
-// Haalt voor elke unieke lijn de route op en update de kaart.
 async function fetchMapRoutes(lineCodes) {
   for (const [i, code] of lineCodes.entries()) {
     for (const dir of [1, 2]) {
@@ -462,7 +447,7 @@ async function fetchMapRoutes(lineCodes) {
           const color = LINE_PALETTE[(mapRoutes.length) % LINE_PALETTE.length];
           mapRoutes.push({label: `${lnum} → ${dest}`, color, coords});
         }
-      } catch (e) { /* lijn niet beschikbaar */ }
+      } catch (e) { }
     }
   }
   if (lMap && mapRoutes.length) drawMap();
@@ -622,7 +607,39 @@ function toggleGPS() {
     arc.setAttribute('stroke-dashoffset', 264-(264*Math.min(kmh/160,1)));
     arc.style.stroke = color;
     document.getElementById('gaugeNum').style.color = color;
+    
+    // Update live weer op de exacte GPS-locatie
+    loadWeather(pos.coords.latitude, pos.coords.longitude, "Mijn locatie");
   }, e => toast('GPS: '+e.message), {enableHighAccuracy:true,maximumAge:500,timeout:12000});
+}
+
+// ── WEATHER ───────────────────────────────
+async function loadWeather(lat = 52.0908, lon = 5.1214, locName = "Utrecht (Centraal)") {
+  try {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code`;
+    const r = await fetch(url);
+    if (!r.ok) throw new Error();
+    const data = await r.json();
+    
+    const temp = Math.round(data.current.temperature_2m);
+    const code = data.current.weather_code;
+    
+    let icon = '🌤️', desc = 'Bewolkt';
+    if (code === 0) { icon = '☀️'; desc = 'Zonnig'; }
+    else if (code <= 3) { icon = '🌤️'; desc = 'Licht bewolkt'; }
+    else if ([45, 48].includes(code)) { icon = '🌫️'; desc = 'Mist'; }
+    else if ([51, 53, 55].includes(code)) { icon = '🌦️'; desc = 'Motregen'; }
+    else if ([61, 63, 65, 80, 81, 82].includes(code)) { icon = '🌧️'; desc = 'Regen'; }
+    else if ([71, 73, 75, 85, 86].includes(code)) { icon = '🌨️'; desc = 'Sneeuw'; }
+    else if ([95, 96, 99].includes(code)) { icon = '⛈️'; desc = 'Onweer'; }
+
+    document.querySelector('.weather-bar .w-icon').textContent = icon;
+    document.getElementById('wTemp').textContent = `${temp}°C`;
+    document.getElementById('wInfo').textContent = desc;
+    document.getElementById('wLoc').textContent = locName;
+  } catch (e) {
+    document.getElementById('wInfo').textContent = "Weer niet beschikbaar";
+  }
 }
 
 // ── UTILS ─────────────────────────────────
@@ -635,6 +652,7 @@ function toast(msg) {
 
 // ── INIT ──────────────────────────────────
 renderSaved();
+loadWeather();
 </script>
 </body>
 </html>
